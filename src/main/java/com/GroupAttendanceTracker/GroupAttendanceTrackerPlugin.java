@@ -1,4 +1,4 @@
-package com.group_attendance;
+package com.GroupAttendanceTracker;
 
 import com.google.inject.Provides;
 import lombok.Getter;
@@ -33,25 +33,25 @@ import java.util.List;
         tags = {"clan", "attendance", "group"},
         enabledByDefault = false
 )
-public class Group_AttendancePlugin extends Plugin
+public class GroupAttendanceTrackerPlugin extends Plugin
 {
     @Inject
     private Client client;
 
     @Inject
-    private Group_AttendanceConfig config;
+    private GroupAttendanceTrackerConfig config;
 
     @Inject
     private OverlayManager overlayManager;
 
     @Inject
-    private Group_AttendanceOverlay overlay;
+    private GroupAttendanceTrackerOverlay overlay;
 
     @Inject
     private ClientToolbar clientToolbar;
 
     @Inject
-    private Group_AttendancePanel panel;
+    private GroupAttendanceTrackerPanel panel;
 
     private NavigationButton navButton;
 
@@ -72,9 +72,9 @@ public class Group_AttendancePlugin extends Plugin
     private static final BufferedImage ICON = createListIcon();
 
     @Provides
-    Group_AttendanceConfig provideConfig(ConfigManager configManager)
+    GroupAttendanceTrackerConfig provideConfig(ConfigManager configManager)
     {
-        return configManager.getConfig(Group_AttendanceConfig.class);
+        return configManager.getConfig(GroupAttendanceTrackerConfig.class);
     }
 
     @Override
@@ -142,7 +142,7 @@ public class Group_AttendancePlugin extends Plugin
     @Subscribe
     public void onConfigChanged(ConfigChanged event)
     {
-        if (!event.getGroup().equals("group_attendance"))
+        if (!event.getGroup().equals("GroupAttendanceTracker"))
         {
             return;
         }

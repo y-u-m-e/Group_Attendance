@@ -1,4 +1,4 @@
-package com.group_attendance;
+package com.GroupAttendanceTracker;
 
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -12,13 +12,13 @@ import java.awt.*;
 import java.util.List;
 
 @Singleton
-public class Group_AttendanceOverlay extends OverlayPanel
+public class GroupAttendanceTrackerOverlay extends OverlayPanel
 {
-    private final Group_AttendancePlugin plugin;
-    private final Group_AttendanceConfig config;
+    private final GroupAttendanceTrackerPlugin plugin;
+    private final GroupAttendanceTrackerConfig config;
 
     @Inject
-    private Group_AttendanceOverlay(Group_AttendancePlugin plugin, Group_AttendanceConfig config)
+    private GroupAttendanceTrackerOverlay(GroupAttendanceTrackerPlugin plugin, GroupAttendanceTrackerConfig config)
     {
         this.plugin = plugin;
         this.config = config;

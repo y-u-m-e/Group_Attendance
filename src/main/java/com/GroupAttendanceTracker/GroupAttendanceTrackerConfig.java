@@ -1,12 +1,12 @@
-package com.group_attendance;
+package com.GroupAttendanceTracker;
 
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.Range;
 
-@ConfigGroup("group_attendance")
-public interface Group_AttendanceConfig extends Config
+@ConfigGroup("GroupAttendanceTracker")
+public interface GroupAttendanceTrackerConfig extends Config
 {
     @ConfigItem(
             keyName = "showOverlay",

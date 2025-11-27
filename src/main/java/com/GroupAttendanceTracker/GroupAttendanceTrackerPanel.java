@@ -1,4 +1,4 @@
-package com.group_attendance;
+package com.GroupAttendanceTracker;
 
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.ColorScheme;
@@ -13,11 +13,11 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 
 @Singleton
-public class Group_AttendancePanel extends PluginPanel
+public class GroupAttendanceTrackerPanel extends PluginPanel
 {
-    private static final String CONFIG_GROUP = "group_attendance";
+    private static final String CONFIG_GROUP = "GroupAttendanceTracker";
 
-    private final Group_AttendanceConfig config;
+    private final GroupAttendanceTrackerConfig config;
     private final ConfigManager configManager;
 
     private final JTextArea attendanceArea = new JTextArea();
@@ -29,10 +29,10 @@ public class Group_AttendancePanel extends PluginPanel
     private final JScrollPane scrollPane;
 
     // Plugin reference so we can ask it to reset internal data
-    private Group_AttendancePlugin plugin;
+    private GroupAttendanceTrackerPlugin plugin;
 
     @Inject
-    Group_AttendancePanel(Group_AttendanceConfig config, ConfigManager configManager)
+    GroupAttendanceTrackerPanel(GroupAttendanceTrackerConfig config, ConfigManager configManager)
     {
         this.config = config;
         this.configManager = configManager;
@@ -214,7 +214,7 @@ public class Group_AttendancePanel extends PluginPanel
     }
 
     // Called from the plugin's startUp() so the panel can invoke reset on it
-    void setPlugin(Group_AttendancePlugin plugin)
+    void setPlugin(GroupAttendanceTrackerPlugin plugin)
     {
         this.plugin = plugin;
     }
