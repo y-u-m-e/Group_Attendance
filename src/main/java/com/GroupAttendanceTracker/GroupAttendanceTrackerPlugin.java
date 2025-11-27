@@ -28,10 +28,9 @@ import java.util.List;
 
 @Slf4j
 @PluginDescriptor(
-        name = "Group Attendance",
+        name = "Group Attendance Tracker",
         description = "Track Group/Event attendance using world views",
-        tags = {"clan", "attendance", "group"},
-        enabledByDefault = false
+        tags = {"clan", "attendance", "group"}
 )
 public class GroupAttendanceTrackerPlugin extends Plugin
 {
