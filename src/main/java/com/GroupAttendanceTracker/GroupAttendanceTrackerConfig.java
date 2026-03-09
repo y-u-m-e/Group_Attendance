@@ -29,6 +29,16 @@ public interface GroupAttendanceTrackerConfig extends Config
     }
 
     @ConfigItem(
+            keyName = "trackSelf",
+            name = "Track Yourself",
+            description = "Include your own character in the attendance list"
+    )
+    default boolean trackSelf()
+    {
+        return true;
+    }
+
+    @ConfigItem(
             keyName = "ClanChat",
             name = "Track Clan Chat",
             description = "Allow members of Clan chat to be tracked"
@@ -48,6 +58,16 @@ public interface GroupAttendanceTrackerConfig extends Config
         return true;
     }
 
+
+    @ConfigItem(
+            keyName = "GuestClanChat",
+            name = "Track Guest Clan",
+            description = "Track members of the clan you are guesting in"
+    )
+    default boolean GuestClanChat()
+    {
+        return false;
+    }
 
     @ConfigItem(
             keyName = "PublicChat",

@@ -7,6 +7,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Player;
 import net.runelite.api.WorldView;
+import net.runelite.api.clan.ClanChannel;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.client.config.ConfigManager;
@@ -34,6 +35,11 @@ import java.util.List;
 )
 public class GroupAttendanceTrackerPlugin extends Plugin
 {
+    private static final String CONFIG_GROUP_KEY = "GroupAttendanceTracker";
+    private static final String DATA_KEY = "attendanceData";
+    private static final int SAVE_INTERVAL_TICKS = 50;
+    private static final BufferedImage ICON = createListIcon();
+
     @Inject
     private Client client;
 
@@ -52,28 +58,23 @@ public class GroupAttendanceTrackerPlugin extends Plugin
     @Inject
     private GroupAttendanceTrackerPanel panel;
 
+    @Inject
+    private ConfigManager configManager;
+
     private NavigationButton navButton;
 
-    // Names shown in the overlay (sorted/limited subset)
     @Getter
     private List<String> visibleNames = Collections.emptyList();
 
-    // Total time present per player (ticks), for *all* filtered players
     private final Map<String, Integer> attendanceTicks = new HashMap<>();
-
-    // For logging: last set of visible names
     private Set<String> lastLoggedSet = new HashSet<>();
-
-    // Whether we’re currently tracking attendance
     private boolean trackingEnabled;
-
-    // Icon for nav button
-    private static final BufferedImage ICON = createListIcon();
+    private int ticksSinceLastSave = 0;
 
     @Provides
-    GroupAttendanceTrackerConfig provideConfig(ConfigManager configManager)
+    GroupAttendanceTrackerConfig provideConfig(ConfigManager cm)
     {
-        return configManager.getConfig(GroupAttendanceTrackerConfig.class);
+        return cm.getConfig(GroupAttendanceTrackerConfig.class);
     }
 
     @Override
@@ -81,17 +82,18 @@ public class GroupAttendanceTrackerPlugin extends Plugin
     {
         log.info("Group Attendance plugin started");
         visibleNames = Collections.emptyList();
-        attendanceTicks.clear();
         lastLoggedSet.clear();
+        ticksSinceLastSave = 0;
 
         trackingEnabled = config.trackingEnabled();
+
+        loadAttendance();
 
         if (config.showOverlay())
         {
             overlayManager.add(overlay);
         }
 
-        // Make panel aware of this plugin (for reset button)
         panel.setPlugin(this);
 
         navButton = NavigationButton.builder()
@@ -103,15 +105,18 @@ public class GroupAttendanceTrackerPlugin extends Plugin
 
         clientToolbar.addNavigation(navButton);
 
-        SwingUtilities.invokeLater(() -> panel.updateAttendanceText("No attendance yet."));
+        final String text = attendanceTicks.isEmpty()
+                ? "No attendance yet."
+                : buildAttendanceText();
+        SwingUtilities.invokeLater(() -> panel.updateAttendanceText(text));
     }
-
-
 
     @Override
     protected void shutDown()
     {
         log.info("Group Attendance plugin stopped");
+
+        saveAttendance();
 
         overlayManager.remove(overlay);
 
@@ -124,9 +129,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         visibleNames = Collections.emptyList();
         attendanceTicks.clear();
         lastLoggedSet.clear();
-
-        // Clear panel text
-        SwingUtilities.invokeLater(() -> panel.updateAttendanceText("No attendance yet."));
     }
 
     @Subscribe
@@ -136,12 +138,18 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         {
             log.info("Attendance: logged in as {}", client.getLocalPlayer().getName());
         }
+
+        if (event.getGameState() == GameState.LOGIN_SCREEN
+                || event.getGameState() == GameState.HOPPING)
+        {
+            saveAttendance();
+        }
     }
 
     @Subscribe
     public void onConfigChanged(ConfigChanged event)
     {
-        if (!event.getGroup().equals("GroupAttendanceTracker"))
+        if (!event.getGroup().equals(CONFIG_GROUP_KEY))
         {
             return;
         }
@@ -163,13 +171,11 @@ public class GroupAttendanceTrackerPlugin extends Plugin
 
             if (!trackingEnabled)
             {
-                // Stop showing current players in the overlay when tracking stops.
-                // (We do NOT clear attendanceTicks so times remain in the panel.)
                 visibleNames = Collections.emptyList();
+                saveAttendance();
             }
         }
     }
-
 
     @Subscribe
     public void onGameTick(GameTick tick)
@@ -179,7 +185,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
             return;
         }
 
-        // If tracking is disabled, do nothing.
         if (!trackingEnabled)
         {
             return;
@@ -199,34 +204,37 @@ public class GroupAttendanceTrackerPlugin extends Plugin
             return;
         }
 
-        // Collect all players from world view tree
         List<Player> allPlayers = new ArrayList<>();
         collectPlayersRecursive(rootView, allPlayers);
 
-        // Names after filtering (clanOnly etc.), BEFORE overlay limiting
         List<String> filteredNames = new ArrayList<>();
 
         for (Player p : allPlayers)
         {
-            if (p == null || p == local)
+            if (p == null)
             {
                 continue;
             }
 
             String name = p.getName();
+            boolean isLocalPlayer = (p == local);
             boolean isNameInFilter = false;
 
-            // Clan-only filter (clan OR friends chat) if enabled
-            if (config.ClanChat() && p.isClanMember())
+            if (isLocalPlayer)
             {
-
-                    isNameInFilter = true;
+                isNameInFilter = config.trackSelf();
             }
-
-            // Friends Chat-only filter (OR friends chat) if enabled
+            else if (config.ClanChat() && p.isClanMember())
+            {
+                isNameInFilter = true;
+            }
             else if (config.FriendsChat() && p.isFriendsChatMember())
             {
-                    isNameInFilter = true;
+                isNameInFilter = true;
+            }
+            else if (config.GuestClanChat() && isGuestClanMember(name))
+            {
+                isNameInFilter = true;
             }
             else if (config.PublicChat())
             {
@@ -239,13 +247,11 @@ public class GroupAttendanceTrackerPlugin extends Plugin
             }
         }
 
-        // Sort (for overlay & panel output)
         if (config.sortAlphabetically())
         {
             filteredNames.sort(String.CASE_INSENSITIVE_ORDER);
         }
 
-        // ---- Track time present: 1 tick per game tick while they are in filteredNames ----
         Set<String> filteredSet = new HashSet<>(filteredNames);
 
         for (String name : filteredSet)
@@ -253,12 +259,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
             attendanceTicks.merge(name, 1, Integer::sum);
         }
 
-        // IMPORTANT:
-        // Do NOT remove players who are no longer in filteredSet.
-        // This keeps their names and final times in the panel.
-        // attendanceTicks.keySet().removeIf(n -> !filteredSet.contains(n));
-
-        // ---- Build overlay-visible list (limited) ----
         int max = Math.max(1, config.maxPlayers());
         List<String> overlayNames;
         if (filteredNames.size() > max)
@@ -272,16 +272,27 @@ public class GroupAttendanceTrackerPlugin extends Plugin
 
         visibleNames = Collections.unmodifiableList(overlayNames);
 
-        // ---- Build attendance text for panel & clipboard ----
         final String attendanceText = buildAttendanceText();
         SwingUtilities.invokeLater(() -> panel.updateAttendanceText(attendanceText));
+
+        ticksSinceLastSave++;
+        if (ticksSinceLastSave >= SAVE_INTERVAL_TICKS)
+        {
+            saveAttendance();
+            ticksSinceLastSave = 0;
+        }
     }
 
+    private boolean isGuestClanMember(String name)
+    {
+        if (name == null)
+        {
+            return false;
+        }
+        ClanChannel guestClan = client.getGuestClanChannel();
+        return guestClan != null && guestClan.findMember(name) != null;
+    }
 
-
-    /**
-     * Recursively collect players from this worldview and all child worldviews.
-     */
     private void collectPlayersRecursive(WorldView worldView, List<Player> out)
     {
         for (Player p : worldView.players())
@@ -298,13 +309,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         }
     }
 
-    /**
-     * Build a text block like:
-     *
-     *   Group attendance (3)
-     *   Alice - 03:24
-     *   Bob   - 01:18
-     */
     private String buildAttendanceText()
     {
         if (attendanceTicks.isEmpty())
@@ -313,7 +317,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         }
 
         List<Map.Entry<String, Integer>> entries = new ArrayList<>(attendanceTicks.entrySet());
-        // Sort by longest time present desc, then name
         entries.sort(Comparator
                 .comparingInt((Map.Entry<String, Integer> e) -> e.getValue()).reversed()
                 .thenComparing(Map.Entry::getKey, String.CASE_INSENSITIVE_ORDER));
@@ -332,54 +335,124 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         return sb.toString();
     }
 
-    /**
-     * Convert game ticks (~0.6s) to mm:ss.
-     */
     private static String formatDurationTicks(int ticks)
     {
-        long totalMillis = ticks * 600L; // 600 ms per tick
+        long totalMillis = ticks * 600L;
         long totalSeconds = totalMillis / 1000L;
         long minutes = totalSeconds / 60L;
         long seconds = totalSeconds % 60L;
         return String.format("%02d:%02d", minutes, seconds);
     }
 
-    /**
-     * Simple list-style icon: three rows of [■ ███].
-     */
+    // --- Persistence ---
+
+    private void saveAttendance()
+    {
+        if (attendanceTicks.isEmpty())
+        {
+            configManager.unsetConfiguration(CONFIG_GROUP_KEY, DATA_KEY);
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Integer> entry : attendanceTicks.entrySet())
+        {
+            if (sb.length() > 0)
+            {
+                sb.append(';');
+            }
+            sb.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+
+        configManager.setConfiguration(CONFIG_GROUP_KEY, DATA_KEY, sb.toString());
+        log.debug("Saved attendance for {} players", attendanceTicks.size());
+    }
+
+    private void loadAttendance()
+    {
+        attendanceTicks.clear();
+
+        String data = configManager.getConfiguration(CONFIG_GROUP_KEY, DATA_KEY);
+        if (data == null || data.isEmpty())
+        {
+            return;
+        }
+
+        for (String entry : data.split(";"))
+        {
+            int eq = entry.lastIndexOf('=');
+            if (eq < 1)
+            {
+                continue;
+            }
+
+            String name = entry.substring(0, eq);
+            try
+            {
+                int ticks = Integer.parseInt(entry.substring(eq + 1));
+                attendanceTicks.put(name, ticks);
+            }
+            catch (NumberFormatException e)
+            {
+                log.warn("Skipping malformed attendance entry: {}", entry);
+            }
+        }
+
+        log.info("Loaded attendance for {} players", attendanceTicks.size());
+    }
+
+    // --- Icon ---
+
     private static BufferedImage createListIcon()
     {
         int size = 16;
         BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
 
-        g.setColor(Color.WHITE);
+        g.setColor(new Color(0x2a1800));
+        g.fillRect(1, 3, 13, 11);
 
-        // Row 1
-        g.fillRect(2, 3, 3, 3);   // bullet
-        g.fillRect(7, 3, 7, 3);   // line
+        g.setColor(new Color(0x5a0000));
+        g.fillRect(1, 3, 13, 4);
 
-        // Row 2
-        g.fillRect(2, 7, 3, 3);
-        g.fillRect(7, 7, 7, 3);
+        g.setColor(new Color(0xc03020));
+        g.fillRect(2, 3, 11, 1);
 
-        // Row 3
-        g.fillRect(2, 11, 3, 3);
-        g.fillRect(7, 11, 7, 3);
+        g.setColor(new Color(0xc8a030));
+        g.fillRect(4, 1, 2, 4);
+        g.fillRect(10, 1, 2, 4);
+
+        g.setColor(new Color(0xffe060));
+        g.fillRect(4, 1, 1, 1);
+        g.fillRect(10, 1, 1, 1);
+
+        g.setColor(new Color(0xc8a030));
+        g.fillRect(2, 9, 2, 2);
+        g.fillRect(6, 9, 2, 2);
+        g.fillRect(10, 9, 2, 2);
+
+        g.setColor(new Color(0x4a3010));
+        g.fillRect(2, 12, 2, 1);
+        g.fillRect(6, 12, 2, 1);
+        g.fillRect(10, 12, 2, 1);
+
+        g.setColor(new Color(0xffe060));
+        g.fillRect(2, 9, 1, 1);
+        g.fillRect(6, 9, 1, 1);
+        g.fillRect(10, 9, 1, 1);
+
+        g.setColor(new Color(0xc8a030));
+        g.drawRect(1, 3, 12, 10);
 
         g.dispose();
         return img;
     }
 
-    /**
-     * Snapshot for tests / external use if needed.
-     */
     public Map<String, Integer> getAttendanceTicks()
     {
         return Collections.unmodifiableMap(attendanceTicks);
     }
 
-    // Small DTO if you ever want structured access elsewhere
     public static class AttendanceRecord
     {
         private final String name;
@@ -408,7 +481,8 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         visibleNames = Collections.emptyList();
         lastLoggedSet.clear();
 
+        configManager.unsetConfiguration(CONFIG_GROUP_KEY, DATA_KEY);
+
         SwingUtilities.invokeLater(() -> panel.updateAttendanceText("No attendance yet."));
     }
-
 }
