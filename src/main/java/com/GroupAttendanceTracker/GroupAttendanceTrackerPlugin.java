@@ -67,7 +67,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
     private List<String> visibleNames = Collections.emptyList();
 
     private final Map<String, Integer> attendanceTicks = new HashMap<>();
-    private Set<String> lastLoggedSet = new HashSet<>();
     private boolean trackingEnabled;
     private int ticksSinceLastSave = 0;
 
@@ -82,7 +81,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
     {
         log.info("Group Attendance plugin started");
         visibleNames = Collections.emptyList();
-        lastLoggedSet.clear();
         ticksSinceLastSave = 0;
 
         trackingEnabled = config.trackingEnabled();
@@ -128,7 +126,6 @@ public class GroupAttendanceTrackerPlugin extends Plugin
 
         visibleNames = Collections.emptyList();
         attendanceTicks.clear();
-        lastLoggedSet.clear();
     }
 
     @Subscribe
@@ -448,38 +445,10 @@ public class GroupAttendanceTrackerPlugin extends Plugin
         return img;
     }
 
-    public Map<String, Integer> getAttendanceTicks()
-    {
-        return Collections.unmodifiableMap(attendanceTicks);
-    }
-
-    public static class AttendanceRecord
-    {
-        private final String name;
-        private final int ticks;
-
-        public AttendanceRecord(String name, int ticks)
-        {
-            this.name = name;
-            this.ticks = ticks;
-        }
-
-        public String getName()
-        {
-            return name;
-        }
-
-        public int getTicks()
-        {
-            return ticks;
-        }
-    }
-
     void resetAttendance()
     {
         attendanceTicks.clear();
         visibleNames = Collections.emptyList();
-        lastLoggedSet.clear();
 
         configManager.unsetConfiguration(CONFIG_GROUP_KEY, DATA_KEY);
 
